@@ -1,115 +1,94 @@
 pipeline {
     agent any
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-    }
-
     environment {
-        APP_NAME = "javasec"
-        REMOTE_HOST = "192.168.195.100"      // 改成宿主机IP
-        REMOTE_USER = "root"           // 改成宿主机用户名
-        REMOTE_DIR  = "/data/Application/javasec"
+        GITHUB_REPO = 'https://github.com/Judges6699/HelloJava.git'
+        BRANCH = 'main'
 
-        SCA_API_URL = "http://your-sdl-server/openapi/tasks/sca"
-        SCA_TOKEN   = "your-api-token"
+        // 宿主机信息
+        DEPLOY_HOST = '192.168.195.100'
+        DEPLOY_USER = 'root'
+        DEPLOY_PATH = '/data/Application/javaproject'
+
+        // SCA接口地址
+        SCA_API = 'http://你的sca服务地址/openapi/tasks/sca'
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo "=== Checkout Source ==="
-                checkout scm
+                echo '=== 拉取 GitHub 代码 ==='
+                git branch: "${BRANCH}", url: "${GITHUB_REPO}"
             }
         }
 
-        stage('Parallel Fake Build & SCA Trigger') {
+        stage('Build & SCA Parallel') {
             parallel {
 
-                stage('Fake Compile') {
+                stage('Fake Build') {
                     steps {
-                        echo "=== Fake Compile Stage ==="
-                        sh 'echo "Simulating build... no real compile executed."'
+                        echo '=== 伪编译开始 ==='
+                        sh 'echo 编译中...'
+                        sh 'sleep 3'
+                        echo '=== 编译完成 ==='
                     }
                 }
 
-                stage('Trigger SCA Task') {
+                stage('Trigger SCA') {
                     steps {
-                        echo "=== Trigger SCA Scan Task ==="
-
-                        //catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                        //    script {
-                        //        def status = sh(
-                        //            script: """
-                        //            curl -s -o sca_response.json -w "%{http_code}" \
-                        //            -X POST ${SCA_API_URL} \
-                        //            -H "Content-Type: application/json" \
-                        //            -H "Authorization: Bearer ${SCA_TOKEN}" \
-                        //            -d '{
-                        //                    "projectName":"${env.JOB_NAME}",
-                        //                    "branch":"${env.BRANCH_NAME ?: "main"}",
-                        //                    "buildNumber":"${env.BUILD_NUMBER}"
-                        //                }'
-                        //            """,
-                        //            returnStdout: true
-                        //        ).trim()
-						//
-                        //        echo "SCA HTTP Status: ${status}"
-						//
-                        //        if (status != "200" && status != "201") {
-                        //            echo "SCA trigger failed but pipeline continues."
-                        //            error("SCA trigger failed")
-                        //        }
-                        //    }
+                        //catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        //    echo '=== 下发 SCA 扫描任务 ==='
+                        //    sh """
+                        //        curl -X POST ${SCA_API} \
+                        //        -H 'Content-Type: application/json' \
+                        //        -d '{
+                        //              "projectName": "javasec",
+                        //              "projectVersion": "1.0",
+                        //              "moduleName": "default",
+                        //              "data": {
+                        //                  "company": "test"
+                        //              }
+                        //            }'
+                        //    """
+                        //    echo '=== SCA 任务下发完成 ==='
                         //}
                     }
                 }
             }
         }
 
-        stage('Deploy On Host') {
+        stage('Deploy on Host') {
             steps {
-                echo "=== Deploying on Host via SSH ==="
+                echo '=== 部署到宿主机 ==='
 
-                sshagent(credentials: ['deploy-ssh']) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        mkdir -p ${REMOTE_DIR}
-                    '
-                    """
+                withCredentials([sshUserPrivateKey(
+                        credentialsId: 'deploy-key',
+                        keyFileVariable: 'SSH_KEY'
+                )]) {
 
                     sh """
-                    scp -o StrictHostKeyChecking=no -r . ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}
-                    """
+                        chmod 600 $SSH_KEY
 
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        cd ${REMOTE_DIR} &&
-                        docker stop javasec-container || true &&
-                        docker rm javasec-container || true &&
-                        docker build -t javasec:latest . &&
-                        docker run -d -p 80:8888 -v logs:/logs --name javasec-container javasec:latest
-                    '
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${DEPLOY_USER}@${DEPLOY_HOST} '
+                            cd ${DEPLOY_PATH} &&
+                            git pull &&
+                            docker stop javasec || true &&
+                            docker rm javasec || true &&
+                            docker build -t javasec . &&
+                            docker run -d --name javasec -p 80:8888 -v logs:/logs javasec
+                        '
                     """
                 }
+
+                echo '=== 部署完成 ==='
             }
         }
     }
 
     post {
-        success {
-            echo "Pipeline SUCCESS"
-        }
-        unstable {
-            echo "Pipeline UNSTABLE (SCA trigger failed)"
-        }
-        failure {
-            echo "Pipeline FAILED"
-        }
         always {
-            archiveArtifacts artifacts: 'sca_response.json', fingerprint: true
+            echo '=== Pipeline 执行结束 ==='
         }
     }
 }
