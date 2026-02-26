@@ -62,24 +62,9 @@ pipeline {
             steps {
                 echo '=== 部署到宿主机 ==='
 
-                withCredentials([sshUserPrivateKey(
-                        credentialsId: 'deploy-key',
-                        keyFileVariable: 'SSH_KEY'
-                )]) {
-
-                    sh """
-                        chmod 600 $SSH_KEY
-
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${DEPLOY_USER}@${DEPLOY_HOST} '
-                            cd ${DEPLOY_PATH} &&
-                            git pull &&
-                            docker stop javasec || true &&
-                            docker rm javasec || true &&
-                            docker build -t javasec . &&
-                            docker run -d --name javasec -p 80:8888 -v logs:/logs javasec
-                        '
-                    """
-                }
+                sh '''
+                    /var/jenkins_home/deploy-HelloJava.sh
+                '''
 
                 echo '=== 部署完成 ==='
             }
