@@ -20,6 +20,7 @@ pipeline {
             steps {
                 echo '=== 拉取 GitHub 代码 ==='
                 git branch: "${BRANCH}", url: "${GITHUB_REPO}"
+                mvn clean package -DskipTests
             }
         }
 
