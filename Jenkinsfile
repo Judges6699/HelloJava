@@ -14,13 +14,16 @@ pipeline {
         SCA_API = 'http://你的sca服务地址/openapi/tasks/sca'
     }
 
+    tools {
+        maven 'Global'
+    }
+    
     stages {
 
         stage('Checkout') {
             steps {
                 echo '=== 拉取 GitHub 代码 ==='
                 git branch: "${BRANCH}", url: "${GITHUB_REPO}"
-                mvn clean package -DskipTests
             }
         }
 
@@ -29,9 +32,9 @@ pipeline {
 
                 stage('Fake Build') {
                     steps {
-                        echo '=== 伪编译开始 ==='
+                        echo '=== 编译开始 ==='
                         sh 'echo 编译中...'
-                        sh 'sleep 3'
+                            sh 'mvn clean package -DskipTests'
                         echo '=== 编译完成 ==='
                     }
                 }
