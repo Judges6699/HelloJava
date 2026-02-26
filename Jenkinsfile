@@ -37,22 +37,22 @@ pipeline {
 
                 stage('Trigger SCA') {
                     steps {
-                        //catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                        //    echo '=== 下发 SCA 扫描任务 ==='
-                        //    sh """
-                        //        curl -X POST ${SCA_API} \
-                        //        -H 'Content-Type: application/json' \
-                        //        -d '{
-                        //              "projectName": "javasec",
-                        //              "projectVersion": "1.0",
-                        //              "moduleName": "default",
-                        //              "data": {
-                        //                  "company": "test"
-                        //              }
-                        //            }'
-                        //    """
-                        //    echo '=== SCA 任务下发完成 ==='
-                        //}
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                            echo '=== 下发 SCA 扫描任务 ==='
+                            //sh """
+                            //    curl -X POST ${SCA_API} \
+                            //    -H 'Content-Type: application/json' \
+                            //    -d '{
+                            //          "projectName": "javasec",
+                            //          "projectVersion": "1.0",
+                            //          "moduleName": "default",
+                            //          "data": {
+                            //              "company": "test"
+                            //          }
+                            //        }'
+                            //"""
+                            echo '=== SCA 任务下发完成 ==='
+                        }
                     }
                 }
             }
