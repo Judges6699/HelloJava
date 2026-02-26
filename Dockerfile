@@ -1,5 +1,5 @@
-FROM java:8
-
+#FROM java:8
+FROM eclipse-temurin:8-jre
 VOLUME /tmp
 
 ADD ./target/javasec-1.7.jar app.jar
