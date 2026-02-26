@@ -43,21 +43,21 @@ pipeline {
       steps {
         echo '=== Docker Build ==='
         sh """
-                        docker build -t ${DOCKER_IMAGE} .
-                        """
+                                docker build -t ${DOCKER_IMAGE} .
+                                """
         echo '=== Stop Old Container ==='
         sh """
-                        docker stop ${CONTAINER_NAME} || true
-                        docker rm ${CONTAINER_NAME} || true
-                        """
+                                docker stop ${CONTAINER_NAME} || true
+                                docker rm ${CONTAINER_NAME} || true
+                                """
         echo '=== Run New Container ==='
         sh """
-                        docker run -d \
-                          --name ${CONTAINER_NAME} \
-                          -p 80:8888 \
-                          -v logs:/logs \
-                          ${DOCKER_IMAGE}
-                        """
+                                docker run -d \
+                                  --name ${CONTAINER_NAME} \
+                                  -p 80:8888 \
+                                  -v logs:/logs \
+                                  ${DOCKER_IMAGE}
+                                """
       }
     }
 
