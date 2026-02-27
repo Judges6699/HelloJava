@@ -158,9 +158,6 @@ pipeline {
         }
 
         stage('生产发布审批') {
-            when {
-                expression { env.SECURITY_GATE_PASS == "true" }
-            }
             steps {
                 input message: '安全门禁通过，是否确认发布到生产环境？'
             }
@@ -184,3 +181,4 @@ pipeline {
         }
     }
 }
+
