@@ -21,17 +21,17 @@ pipeline {
     
     stages {
 
-        stage('Checkout') {
+        stage('克隆代码') {
             steps {
                 echo '=== 拉取 GitHub 代码 ==='
                 git branch: "${BRANCH}", url: "${GITHUB_REPO}"
             }
         }
 
-        stage('Build & SCA Parallel') {
+        stage('编译 & SCA 检测') {
             parallel {
 
-                stage('Fake Build') {
+                stage('编译构建') {
                     steps {
                         echo '=== 编译开始 ==='
                         sh 'echo 编译中...'
@@ -40,7 +40,7 @@ pipeline {
                     }
                 }
 
-                stage('Trigger SCA') {
+                stage('SCA扫描') {
                     steps {
                         catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                             echo '=== 下发 SCA 扫描任务 ==='
@@ -63,7 +63,7 @@ pipeline {
             }
         }
 
-        stage('Deploy on Host') {
+        stage('STG部署') {
             steps {
                 echo '=== 部署到宿主机 ==='
 
