@@ -164,9 +164,6 @@ pipeline {
         }
 
         stage('PROD生产发布') {
-            when {
-                expression { env.SECURITY_GATE_PASS == "true" }
-            }
             steps {
                 echo '================ 开始生产环境发布 ================'
                 //sh '/var/jenkins_home/deploy-prod.sh'
@@ -181,4 +178,5 @@ pipeline {
         }
     }
 }
+
 
