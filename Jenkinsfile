@@ -41,71 +41,65 @@ pipeline {
                     }
                 }
 
-                stage('SCA扫描') {
-                    steps {
-                        script {
+				stage('SCA扫描') {
+					steps {
+						script {
 
-                            def payload = '''
-                            {
-                              "projectName": "test",
-                              "projectVersion": "1.0",
-                              "moduleName": "mod",
-                              "startum": "root",
-                              "data": {
-                                "language": 1,
-                                "vcs": {
-                                  "codeType": "0",
-                                  "url": "http://test.git"
-                                }
-                              }
-                            }
-                            '''
+							def payload = '''{
+				  "projectName": "test",
+				  "projectVersion": "1.0",
+				  "moduleName": "mod",
+				  "startum": "root",
+				  "data": {
+					"language": 1,
+					"vcs": {
+					  "codeType": "0",
+					  "url": "http://test.git"
+					}
+				  }
+				}'''
 
-                            echo "=== 开始调用 SCA 接口 ==="
+							writeFile file: 'sca_payload.json', text: payload
 
-                            def response = sh(
-                                script: """
-                                    curl --connect-timeout 10 --max-time 30 \
-                                    -X POST ${SECURITY_API}/tasks/sca \
-                                    -H "Content-Type: application/json" \
-                                    -d "${payload}"
-                                """,
-                                returnStdout: true
-                            ).trim()
+							def response = sh(
+								script: """
+									curl --connect-timeout 10 --max-time 30 \
+									-X POST ${SECURITY_API}/tasks/sca \
+									-H "Content-Type: application/json" \
+									--data @sca_payload.json
+								""",
+								returnStdout: true
+							).trim()
 
-                            if (!response) {
-                                error "SCA接口无返回内容"
-                            }
+							if (!response) {
+								error "SCA接口无返回内容"
+							}
 
-                            echo "SCA接口返回: ${response}"
+							echo "SCA接口返回: ${response}"
 
-                            // ===== 接口层校验 =====
-                            if (!response.contains('"code":0')) {
-                                error "SCA接口调用失败"
-                            }
+							if (!response.contains('"code":0')) {
+								error "SCA接口调用失败"
+							}
 
-                            // ===== 业务层校验 =====
-                            if (!response.contains('"status":"SUCCESS"')) {
-                                error "SCA任务创建失败"
-                            }
+							if (!response.contains('"status":"SUCCESS"')) {
+								error "SCA任务创建失败"
+							}
 
-                            // ===== 提取 taskId =====
-                            def taskId = sh(
-                                script: """echo "${response}" | sed -n 's/.*"taskId":"\\([^"]*\\)".*/\\1/p'""",
-                                returnStdout: true
-                            ).trim()
+							def taskId = sh(
+								script: """echo "${response}" | sed -n 's/.*"taskId":"\\([^"]*\\)".*/\\1/p'""",
+								returnStdout: true
+							).trim()
 
-                            if (!taskId) {
-                                error "未获取到SCA任务ID"
-                            }
+							if (!taskId) {
+								error "未获取到SCA任务ID"
+							}
 
-                            echo "SCA任务下发成功，任务ID: ${taskId}"
+							echo "SCA任务下发成功，任务ID: ${taskId}"
 
-                            env.SCA_TASK_ID = taskId
-                        }
-                    }
-                }
-            }
+							env.SCA_TASK_ID = taskId
+						}
+					}
+				}
         }
 
         stage('STG部署') {
@@ -149,4 +143,3 @@ pipeline {
         }
     }
 }
-
