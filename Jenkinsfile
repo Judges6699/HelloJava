@@ -10,7 +10,7 @@ pipeline {
         DEPLOY_PATH = '/data/Application/javaproject'
 
         // 统一安全接口根路径
-        SECURITY_API = 'http://你的sca服务地址/openapi'
+        SECURITY_API = 'http://10.208.239.57:9001/openapi'
 
         // 安全门禁标记
         SECURITY_GATE_PASS = "false"
@@ -41,59 +41,79 @@ pipeline {
                     }
                 }
 
-				stage('SCA扫描') {
-				    steps {
-				        script {
-				
-				            def payload = '''
-				            {
-				              "projectName": "test",
-				              "projectVersion": "1.0",
-				              "moduleName": "mod",
-				              "startum": "root",
-				              "data": {
-				                "language": 1,
-				                "vcs": {
-				                  "codeType": "0",
-				                  "url": "http://test.git"
-				                }
-				              }
-				            }
-				            '''
-				
-				            def response = sh(
-				                script: """
-				                    curl -s --connect-timeout 10 --max-time 30 \
-				                    -X POST http://10.208.239.57:9001/openapi/tasks/sca \
-				                    -H 'Content-Type: application/json' \
-				                    -d '${payload}'
-				                """,
-				                returnStdout: true
-				            ).trim()
-				
-				            echo "SCA接口返回: ${response}"
-				
-				            def json = readJSON text: response
-				
-				            // 第一层判断：接口成功？
-				            if (json.code != 0) {
-				                error "SCA接口调用失败: ${json.message}"
-				            }
-				
-				            def taskId = json.data.taskId
-				            def status = json.data.status
-				            def taskMessage = json.data.taskMessage
-				
-				            // 第二层判断：业务成功？
-				            if (status != "SUCCESS") {
-				                error "SCA任务创建失败: ${taskMessage}"
-				            }
-				
-				            echo "SCA任务下发成功，任务ID: ${taskId}"
-				            env.SCA_TASK_ID = taskId
-				        }
-				    }
-				}
+                stage('SCA扫描') {
+                    steps {
+                        script {
+
+                            echo '=== 开始下发 SCA 扫描任务 ==='
+
+                            def payload = """
+                            {
+                              "projectName": "${env.JOB_NAME}",
+                              "projectVersion": "${env.BUILD_NUMBER}",
+                              "moduleName": "default",
+                              "startum": "jenkins",
+                              "data": {
+                                "language": 1,
+                                "vcs": {
+                                  "codeType": "0",
+                                  "url": "${GITHUB_REPO}"
+                                }
+                              }
+                            }
+                            """
+
+                            def response = sh(
+                                script: """
+                                    curl -s --connect-timeout 10 --max-time 30 \
+                                    -X POST ${SECURITY_API}/tasks/sca \
+                                    -H 'Content-Type: application/json' \
+                                    -d '${payload}'
+                                """,
+                                returnStdout: true
+                            ).trim()
+
+                            echo "SCA接口返回: ${response}"
+
+                            // 防止接口异常返回非JSON
+                            if (!response || !response.trim().startsWith("{")) {
+                                error "SCA接口返回非法数据: ${response}"
+                            }
+
+                            def json = readJSON text: response
+
+                            // 第一层判断：接口层
+                            if (json.code == null || json.code.toInteger() != 0) {
+                                error "SCA接口调用失败: ${json.message}"
+                            }
+
+                            if (!json.data) {
+                                error "SCA接口返回data为空"
+                            }
+
+                            def taskId = json.data.taskId
+                            def status = json.data.status
+                            def taskMessage = json.data.taskMessage
+
+                            echo """
+							================ SCA 任务信息 ================
+							任务ID: ${taskId}
+							状态: ${status}
+							描述: ${taskMessage}
+							==============================================
+							"""
+
+                            // 第二层判断：业务层
+                            if (status != "SUCCESS") {
+                                error "SCA任务创建失败: ${taskMessage}"
+                            }
+
+                            env.SCA_TASK_ID = taskId
+
+                            echo "=== SCA任务下发成功 ==="
+                        }
+                    }
+                }
             }
         }
 
@@ -111,86 +131,8 @@ pipeline {
 
                     echo '================ 开始进行安全红线门禁检查 ================'
 
-                    //def response = sh(
-                    //    script: """
-                    //        curl -s -X GET "${SECURITY_API}/security/redlines\
-                    //        ?sdlTool=0\
-                    //        &projectName=javasec\
-                    //        &projectVersion=1.0"
-                    //    """,
-                    //    returnStdout: true
-                    //).trim()
-					//
-                    //echo "红线接口返回: ${response}"
-					//
-                    //def json = readJSON text: response
-					//
-                    //if (json.code != 0) {
-                    //    error "❌ 安全红线接口调用失败"
-                    //}
-					//
-                    //def data = json.data
-					//
-                    ///* ========= 安全评审 ========= */
-					//
-                    //def stacResult = data.stac?.stacResult ?: 3
-                    //def stacNotItems = data.stac?.stacNotItems ?: 0
-					//
-                    //echo """
-                    //===== 安全评审结果 =====
-                    //不通过条数: ${stacNotItems}
-                    //状态: ${stacResult}
-                    //"""
-					//
-                    //if (stacResult == 1) {
-                    //    error "❌ 安全评审未通过"
-                    //}
-					//
-                    ///* ========= 工具统一检查函数 ========= */
-					//
-                    //def checkTool = { toolName, toolData, needLicenseCheck = false ->
-					//
-                    //    if (toolData == null) {
-                    //        echo ">>> ${toolName} 未发起扫描"
-                    //        return
-                    //    }
-					//
-                    //    def serious = toolData.vulSeriousCount ?: 0
-                    //    def high = toolData.vulHighCount ?: 0
-                    //    def mid = toolData.vulMidCount ?: 0
-                    //    def low = toolData.vulLowCount ?: 0
-					//
-                    //    echo """
-                    //    ===== ${toolName} 扫描结果 =====
-                    //    严重漏洞: ${serious}
-                    //    高危漏洞: ${high}
-                    //    中危漏洞: ${mid}
-                    //    低危漏洞: ${low}
-                    //    """
-					//
-                    //    if (serious > 0 || high > 0 || mid > 0) {
-                    //        error "❌ ${toolName} 存在严重/高危/中危漏洞"
-                    //    }
-					//
-                    //    if (needLicenseCheck) {
-                    //        def riskyLicense = toolData.riskyLicenseCount ?: 0
-                    //        echo "风险许可证数量: ${riskyLicense}"
-                    //        if (riskyLicense > 0) {
-                    //            error "❌ SCA 存在风险许可证"
-                    //        }
-                    //    }
-					//
-                    //    echo "✅ ${toolName} 检查通过"
-                    //}
-					//
-                    //checkTool("SAST", data.sast)
-                    //checkTool("DAST", data.dast)
-                    //checkTool("IAST", data.iast)
-                    //checkTool("SCA", data.sca, true)
-
                     echo "================ 所有安全红线检查通过 ================"
 
-                    // 标记通过
                     env.SECURITY_GATE_PASS = "true"
                 }
             }
@@ -205,7 +147,6 @@ pipeline {
         stage('PROD生产发布') {
             steps {
                 echo '================ 开始生产环境发布 ================'
-                //sh '/var/jenkins_home/deploy-prod.sh'
                 echo '================ 生产发布完成 ================'
             }
         }
@@ -217,6 +158,3 @@ pipeline {
         }
     }
 }
-
-
-
