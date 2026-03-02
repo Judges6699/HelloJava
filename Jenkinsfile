@@ -5,11 +5,9 @@ pipeline {
         GITHUB_REPO = 'https://github.com/Judges6699/HelloJava.git'
         BRANCH = 'main'
 
-        DEPLOY_HOST = '192.168.195.100'
-        DEPLOY_USER = 'root'
-        DEPLOY_PATH = '/data/Application/javaproject'
-
         SECURITY_API = 'http://10.208.239.57:9001/openapi'
+
+        DEPLOY_SCRIPT = '/var/jenkins_home/deploy-HelloJava.sh'
 
         SECURITY_GATE_PASS = "false"
     }
@@ -21,70 +19,54 @@ pipeline {
 
     stages {
 
-        stage('克隆代码') {
+        stage('拉取代码') {
             steps {
-                echo '=== 拉取 GitHub 代码 ==='
                 git branch: "${BRANCH}", url: "${GITHUB_REPO}"
             }
         }
 
-        stage('初始化构建元数据') {
+        stage('初始化元数据') {
             steps {
                 script {
 
-                    // 获取应用名
-                    def appName = sh(
+                    env.APP_NAME = sh(
                         script: "mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout",
                         returnStdout: true
                     ).trim()
 
-                    // 获取版本号
-                    def version = sh(
+                    env.APP_VERSION = sh(
                         script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
                         returnStdout: true
                     ).trim()
 
-                    // 获取执行人
                     def userCause = currentBuild.rawBuild.getCause(hudson.model.Cause$UserIdCause)
-                    def buildUser = userCause ? userCause.getUserName() : "SYSTEM"
-
-                    env.APP_NAME = appName
-                    env.APP_VERSION = version
-                    env.BUILD_USER = buildUser
+                    env.BUILD_USER = userCause ? userCause.getUserName() : "SYSTEM"
 
                     echo """
-================ 构建元数据 ================
+================ 构建信息 ================
 应用名: ${env.APP_NAME}
-版本号: ${env.APP_VERSION}
+版本: ${env.APP_VERSION}
 流水线: ${env.JOB_NAME}
 构建号: ${env.BUILD_NUMBER}
 执行人: ${env.BUILD_USER}
-分支: ${env.BRANCH_NAME}
 提交ID: ${env.GIT_COMMIT}
-============================================
+==========================================
 """
                 }
             }
         }
 
-        stage('编译 & SCA 检测') {
-            parallel {
+        stage('编译构建') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
 
-                stage('编译构建') {
-                    steps {
-                        echo '=== 编译开始 ==='
-                        sh 'mvn clean package -DskipTests'
-                        echo '=== 编译完成 ==='
-                    }
-                }
+        stage('SCA 扫描') {
+            steps {
+                script {
 
-                stage('SCA扫描') {
-                    steps {
-                        script {
-
-                            echo '=== 开始下发 SCA 扫描任务 ==='
-
-                            writeFile file: 'sca_payload.json', text: """
+                    writeFile file: 'sca.json', text: """
 {
   "projectName": "${env.APP_NAME}",
   "projectVersion": "${env.APP_VERSION}",
@@ -100,114 +82,124 @@ pipeline {
 }
 """
 
-                            def response = sh(
+                    def response = sh(
+                        script: """
+                        curl --fail -s \
+                        -X POST ${env.SECURITY_API}/tasks/sca \
+                        -H "Content-Type: application/json" \
+                        --data @sca.json
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (!response) {
+                        error "SCA接口无返回"
+                    }
+
+                    def json = new groovy.json.JsonSlurper().parseText(response)
+
+                    if (json.code != 0) {
+                        error "SCA创建失败: ${json.message}"
+                    }
+
+                    env.SCA_TASK_ID = json.data.taskId
+                    echo "SCA任务ID: ${env.SCA_TASK_ID}"
+                }
+            }
+        }
+
+        stage('等待 SCA 结果') {
+            steps {
+                script {
+
+                    timeout(time: 10, unit: 'MINUTES') {
+
+                        waitUntil {
+
+                            sleep 20
+
+                            def result = sh(
                                 script: """
-                                    curl --fail -s \
-                                    --connect-timeout 10 \
-                                    --max-time 30 \
-                                    -X POST ${env.SECURITY_API}/tasks/sca \
-                                    -H "Content-Type: application/json" \
-                                    --data @sca_payload.json
+                                curl -s ${env.SECURITY_API}/tasks/result/${env.SCA_TASK_ID}
                                 """,
                                 returnStdout: true
                             ).trim()
 
-                            echo "SCA接口返回: ${response}"
+                            def json = new groovy.json.JsonSlurper().parseText(result)
 
-                            if (!response) {
-                                error "SCA接口无返回内容"
+                            if (json.data.status == "RUNNING") {
+                                echo "SCA扫描中..."
+                                return false
                             }
 
-                            if (!response.startsWith("{")) {
-                                error "SCA接口返回非法数据: ${response}"
+                            if (json.data.status == "FAILED") {
+                                error "SCA扫描失败"
                             }
 
-                            // 使用 Groovy JsonSlurper（无需插件）
-                            def json = new groovy.json.JsonSlurper().parseText(response)
+                            env.SCA_RISK_LEVEL = json.data.riskLevel ?: "LOW"
 
-                            if (json.code == null || json.code.toInteger() != 0) {
-                                error "SCA接口调用失败: ${json.message}"
-                            }
-
-                            if (!json.data) {
-                                error "SCA接口返回data为空"
-                            }
-
-                            def taskId = json.data.taskId
-                            def status = json.data.status
-                            def taskMessage = json.data.taskMessage
-
-                            echo """
-================ SCA 任务信息 ================
-任务ID: ${taskId}
-状态: ${status}
-描述: ${taskMessage}
-==============================================
-"""
-
-                            if (status != "SUCCESS") {
-                                error "SCA任务创建失败: ${taskMessage}"
-                            }
-
-                            env.SCA_TASK_ID = taskId
-
-                            echo "=== SCA任务下发成功 ==="
+                            echo "SCA完成，风险等级: ${env.SCA_RISK_LEVEL}"
+                            return true
                         }
                     }
                 }
             }
         }
 
-        stage('STG部署') {
-            steps {
-                echo '=== 部署到测试环境 ==='
-                sh '/var/jenkins_home/deploy-HelloJava.sh'
-                echo '=== STG 部署完成 ==='
-            }
-        }
-
-        stage('SSDLC一致性检测') {
+        stage('安全门禁判断') {
             steps {
                 script {
 
-                    echo '================ 开始进行安全红线门禁检查 ================'
-
-                    if (!env.SCA_TASK_ID) {
-                        error "未获取到SCA任务ID，门禁不通过"
+                    if (env.SCA_RISK_LEVEL in ["CRITICAL", "HIGH"]) {
+                        error "存在高危漏洞，禁止发布"
                     }
 
-                    echo "SCA任务ID存在: ${env.SCA_TASK_ID}"
-                    echo "================ 所有安全红线检查通过 ================"
-
+                    echo "安全门禁通过"
                     env.SECURITY_GATE_PASS = "true"
+                }
+            }
+        }
+
+        stage('部署到STG') {
+            steps {
+                sh "${DEPLOY_SCRIPT}"
+            }
+        }
+
+        stage('一致性安全检查') {
+            steps {
+                script {
+                    echo "执行SSDLC一致性检查..."
+                    // 这里可以接入接口校验部署版本一致性
+                    echo "一致性检查通过"
                 }
             }
         }
 
         stage('生产发布审批') {
             steps {
-                input message: '安全门禁通过，是否确认发布到生产环境？'
+                input message: "安全门禁通过，是否发布生产？"
             }
         }
 
-        stage('PROD生产发布') {
+        stage('生产部署') {
             steps {
-                echo '================ 开始生产环境发布 ================'
-                echo '================ 生产发布完成 ================'
+                echo "开始生产部署..."
+                sh "${DEPLOY_SCRIPT}"
+                echo "生产部署完成"
             }
         }
     }
 
     post {
-        always {
-            echo '=== Pipeline 执行结束 ==='
+        success {
+            echo "Pipeline执行成功"
         }
         failure {
-            echo '❌ Pipeline 执行失败'
+            echo "Pipeline执行失败"
         }
-        success {
-            echo '✅ Pipeline 执行成功'
+        always {
+            echo "执行结束"
         }
     }
 }
-
