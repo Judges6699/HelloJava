@@ -28,6 +28,45 @@ pipeline {
             }
         }
 
+        stage('初始化构建元数据') {
+            steps {
+                script {
+
+                    // 获取应用名
+                    def appName = sh(
+                        script: "mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout",
+                        returnStdout: true
+                    ).trim()
+
+                    // 获取版本号
+                    def version = sh(
+                        script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
+                        returnStdout: true
+                    ).trim()
+
+                    // 获取执行人
+                    def userCause = currentBuild.rawBuild.getCause(hudson.model.Cause$UserIdCause)
+                    def buildUser = userCause ? userCause.getUserName() : "SYSTEM"
+
+                    env.APP_NAME = appName
+                    env.APP_VERSION = version
+                    env.BUILD_USER = buildUser
+
+                    echo """
+================ 构建元数据 ================
+应用名: ${env.APP_NAME}
+版本号: ${env.APP_VERSION}
+流水线: ${env.JOB_NAME}
+构建号: ${env.BUILD_NUMBER}
+执行人: ${env.BUILD_USER}
+分支: ${env.BRANCH_NAME}
+提交ID: ${env.GIT_COMMIT}
+============================================
+"""
+                }
+            }
+        }
+
         stage('编译 & SCA 检测') {
             parallel {
 
@@ -45,24 +84,22 @@ pipeline {
 
                             echo '=== 开始下发 SCA 扫描任务 ==='
 
-                            // 1️⃣ 构造JSON文件（避免shell转义问题）
                             writeFile file: 'sca_payload.json', text: """
-                            {
-                              "projectName": "${env.JOB_NAME}",
-                              "projectVersion": "${env.BUILD_NUMBER}",
-                              "moduleName": "default",
-                              "startum": "jenkins",
-                              "data": {
-                                "language": 1,
-                                "vcs": {
-                                  "codeType": "0",
-                                  "url": "${env.GITHUB_REPO}"
-                                }
-                              }
-                            }
-                            """
+{
+  "projectName": "${env.APP_NAME}",
+  "projectVersion": "${env.APP_VERSION}",
+  "moduleName": "${env.JOB_NAME}",
+  "startum": "${env.BUILD_USER}",
+  "data": {
+    "language": 1,
+    "vcs": {
+      "codeType": "0",
+      "url": "${env.GITHUB_REPO}"
+    }
+  }
+}
+"""
 
-                            // 2️⃣ 调用接口（强制错误退出）
                             def response = sh(
                                 script: """
                                     curl --fail -s \
@@ -77,7 +114,6 @@ pipeline {
 
                             echo "SCA接口返回: ${response}"
 
-                            // 3️⃣ 空返回保护
                             if (!response) {
                                 error "SCA接口无返回内容"
                             }
@@ -86,8 +122,8 @@ pipeline {
                                 error "SCA接口返回非法数据: ${response}"
                             }
 
-                            // 4️⃣ 使用Pipeline Utility插件解析JSON（避免JsonSlurper权限问题）
-                            def json = readJSON text: response
+                            // 使用 Groovy JsonSlurper（无需插件）
+                            def json = new groovy.json.JsonSlurper().parseText(response)
 
                             if (json.code == null || json.code.toInteger() != 0) {
                                 error "SCA接口调用失败: ${json.message}"
@@ -102,12 +138,12 @@ pipeline {
                             def taskMessage = json.data.taskMessage
 
                             echo """
-                            ================ SCA 任务信息 ================
-                            任务ID: ${taskId}
-                            状态: ${status}
-                            描述: ${taskMessage}
-                            ==============================================
-                            """
+================ SCA 任务信息 ================
+任务ID: ${taskId}
+状态: ${status}
+描述: ${taskMessage}
+==============================================
+"""
 
                             if (status != "SUCCESS") {
                                 error "SCA任务创建失败: ${taskMessage}"
@@ -136,7 +172,7 @@ pipeline {
 
                     echo '================ 开始进行安全红线门禁检查 ================'
 
-                    if (env.SCA_TASK_ID == null || env.SCA_TASK_ID == "") {
+                    if (!env.SCA_TASK_ID) {
                         error "未获取到SCA任务ID，门禁不通过"
                     }
 
@@ -149,12 +185,18 @@ pipeline {
         }
 
         stage('生产发布审批') {
+            when {
+                expression { env.SECURITY_GATE_PASS == "true" }
+            }
             steps {
                 input message: '安全门禁通过，是否确认发布到生产环境？'
             }
         }
 
         stage('PROD生产发布') {
+            when {
+                expression { env.SECURITY_GATE_PASS == "true" }
+            }
             steps {
                 echo '================ 开始生产环境发布 ================'
                 echo '================ 生产发布完成 ================'
@@ -174,4 +216,3 @@ pipeline {
         }
     }
 }
-
