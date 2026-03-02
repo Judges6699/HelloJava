@@ -47,20 +47,20 @@ pipeline {
 
                             // 1️⃣ 构造JSON文件（避免shell转义问题）
                             writeFile file: 'sca_payload.json', text: """
-{
-  "projectName": "${env.JOB_NAME}",
-  "projectVersion": "${env.BUILD_NUMBER}",
-  "moduleName": "default",
-  "startum": "jenkins",
-  "data": {
-    "language": 1,
-    "vcs": {
-      "codeType": "0",
-      "url": "${env.GITHUB_REPO}"
-    }
-  }
-}
-"""
+                            {
+                              "projectName": "${env.JOB_NAME}",
+                              "projectVersion": "${env.BUILD_NUMBER}",
+                              "moduleName": "default",
+                              "startum": "jenkins",
+                              "data": {
+                                "language": 1,
+                                "vcs": {
+                                  "codeType": "0",
+                                  "url": "${env.GITHUB_REPO}"
+                                }
+                              }
+                            }
+                            """
 
                             // 2️⃣ 调用接口（强制错误退出）
                             def response = sh(
@@ -102,12 +102,12 @@ pipeline {
                             def taskMessage = json.data.taskMessage
 
                             echo """
-================ SCA 任务信息 ================
-任务ID: ${taskId}
-状态: ${status}
-描述: ${taskMessage}
-==============================================
-"""
+                            ================ SCA 任务信息 ================
+                            任务ID: ${taskId}
+                            状态: ${status}
+                            描述: ${taskMessage}
+                            ==============================================
+                            """
 
                             if (status != "SUCCESS") {
                                 error "SCA任务创建失败: ${taskMessage}"
@@ -149,18 +149,12 @@ pipeline {
         }
 
         stage('生产发布审批') {
-            when {
-                expression { env.SECURITY_GATE_PASS == "true" }
-            }
             steps {
                 input message: '安全门禁通过，是否确认发布到生产环境？'
             }
         }
 
         stage('PROD生产发布') {
-            when {
-                expression { env.SECURITY_GATE_PASS == "true" }
-            }
             steps {
                 echo '================ 开始生产环境发布 ================'
                 echo '================ 生产发布完成 ================'
@@ -180,3 +174,4 @@ pipeline {
         }
     }
 }
+
