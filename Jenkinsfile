@@ -41,60 +41,60 @@ pipeline {
                     }
                 }
 
-		stage('SCA扫描') {
-		    steps {
-		        script {
-		
-		            def payload = '''
-		            {
-		              "projectName": "test",
-		              "projectVersion": "1.0",
-		              "moduleName": "mod",
-		              "startum": "root",
-		              "data": {
-		                "language": 1,
-		                "vcs": {
-		                  "codeType": "0",
-		                  "url": "http://test.git"
-		                }
-		              }
-		            }
-		            '''
-		
-		            def response = sh(
-		                script: """
-		                    curl -s --connect-timeout 10 --max-time 30 \
-		                    -X POST http://10.208.239.57:9001/openapi/tasks/sca \
-		                    -H 'Content-Type: application/json' \
-		                    -d '${payload}'
-		                """,
-		                returnStdout: true
-		            ).trim()
-		
-		            echo "SCA接口返回: ${response}"
-		
-		            // ===== 判断 code 是否为0 =====
-		            if (!response.contains('"code":0')) {
-		                error "SCA接口调用失败"
-		            }
-		
-		            // ===== 判断 status 是否 SUCCESS =====
-		            if (!response.contains('"status":"SUCCESS"')) {
-		                error "SCA任务创建失败"
-		            }
-		
-		            // ===== 提取 taskId =====
-		            def taskId = sh(
-		                script: """echo '${response}' | sed -n 's/.*"taskId":"\\([0-9]*\\)".*/\\1/p'""",
-		                returnStdout: true
-		            ).trim()
-		
-		            echo "SCA任务下发成功，任务ID: ${taskId}"
-		
-		            env.SCA_TASK_ID = taskId
-		        }
-		    }
-		}
+				stage('SCA扫描') {
+					steps {
+						script {
+
+							def payload = '''
+							{
+							  "projectName": "test",
+							  "projectVersion": "1.0",
+							  "moduleName": "mod",
+							  "startum": "root",
+							  "data": {
+								"language": 1,
+								"vcs": {
+								  "codeType": "0",
+								  "url": "http://test.git"
+								}
+							  }
+							}
+							'''
+
+							def response = sh(
+								script: """
+									curl -s --connect-timeout 10 --max-time 30 \
+									-X POST http://10.208.239.57:9001/openapi/tasks/sca \
+									-H 'Content-Type: application/json' \
+									-d '${payload}'
+								""",
+								returnStdout: true
+							).trim()
+
+							echo "SCA接口返回: ${response}"
+
+							// ===== 判断 code 是否为0 =====
+							if (!response.contains('"code":0')) {
+								error "SCA接口调用失败"
+							}
+
+							// ===== 判断 status 是否 SUCCESS =====
+							if (!response.contains('"status":"SUCCESS"')) {
+								error "SCA任务创建失败"
+							}
+
+							// ===== 提取 taskId =====
+							def taskId = sh(
+								script: """echo '${response}' | sed -n 's/.*"taskId":"\\([0-9]*\\)".*/\\1/p'""",
+								returnStdout: true
+							).trim()
+
+							echo "SCA任务下发成功，任务ID: ${taskId}"
+
+							env.SCA_TASK_ID = taskId
+						}
+					}
+				}
         }
 
         stage('STG部署') {
@@ -138,5 +138,3 @@ pipeline {
         }
     }
 }
-
-
