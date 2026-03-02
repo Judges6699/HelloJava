@@ -80,7 +80,7 @@ pipeline {
                                 error "SCA接口返回非法数据: ${response}"
                             }
 
-                            def json = readJSON text: response
+							def json = new groovy.json.JsonSlurperClassic().parseText(response)
 
                             // 第一层判断：接口层
                             if (json.code == null || json.code.toInteger() != 0) {
@@ -158,3 +158,4 @@ pipeline {
         }
     }
 }
+
