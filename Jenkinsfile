@@ -65,7 +65,7 @@ pipeline {
 
                             def response = sh(
                                 script: """
-                                    curl -s --connect-timeout 10 --max-time 30 \
+                                    curl --connect-timeout 10 --max-time 30 \
                                     -X POST ${SECURITY_API}/tasks/sca \
                                     -H "Content-Type: application/json" \
                                     -d "${payload}"
@@ -149,3 +149,4 @@ pipeline {
         }
     }
 }
+
