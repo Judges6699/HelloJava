@@ -41,19 +41,58 @@ pipeline {
                     }
                 }
 
-				stage('SCA扫描'){
-					steps{
-						catchError(buildResult: 'SUCCESS',stageResult: 'FAILURE'){
-							echo'===下发SCA扫描任务==='
-						  //sh""" // curl -X POST ${SCA_API} \ 
-						  // -H 'Content-Type: application/json' \ 
-						  // -d '{ // "projectName": "javasec", 
-						  // "projectVersion": "1.0",
-						  // "moduleName": "default", 
-						  // "data": { // "company": "test" // } // }' """
-							 echo'===SCA任务下发完成==='
-						}
-					}
+				stage('SCA扫描') {
+				    steps {
+				        script {
+				
+				            def payload = '''
+				            {
+				              "projectName": "test",
+				              "projectVersion": "1.0",
+				              "moduleName": "mod",
+				              "startum": "root",
+				              "data": {
+				                "language": 1,
+				                "vcs": {
+				                  "codeType": "0",
+				                  "url": "http://test.git"
+				                }
+				              }
+				            }
+				            '''
+				
+				            def response = sh(
+				                script: """
+				                    curl -s --connect-timeout 10 --max-time 30 \
+				                    -X POST http://10.208.239.57:9001/openapi/tasks/sca \
+				                    -H 'Content-Type: application/json' \
+				                    -d '${payload}'
+				                """,
+				                returnStdout: true
+				            ).trim()
+				
+				            echo "SCA接口返回: ${response}"
+				
+				            def json = readJSON text: response
+				
+				            // 第一层判断：接口成功？
+				            if (json.code != 0) {
+				                error "SCA接口调用失败: ${json.message}"
+				            }
+				
+				            def taskId = json.data.taskId
+				            def status = json.data.status
+				            def taskMessage = json.data.taskMessage
+				
+				            // 第二层判断：业务成功？
+				            if (status != "SUCCESS") {
+				                error "SCA任务创建失败: ${taskMessage}"
+				            }
+				
+				            echo "SCA任务下发成功，任务ID: ${taskId}"
+				            env.SCA_TASK_ID = taskId
+				        }
+				    }
 				}
             }
         }
@@ -178,5 +217,6 @@ pipeline {
         }
     }
 }
+
 
 
