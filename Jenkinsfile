@@ -9,7 +9,7 @@ pipeline {
         DEPLOY_USER = 'root'
         DEPLOY_PATH = '/data/Application/javaproject'
 
-        SECURITY_API = 'http://10.208.239.57:9001/openapi'
+        SECURITY_API = 'http://10.47.105.57:9002/openapi'
 
         SECURITY_GATE_PASS = "false"
     }
